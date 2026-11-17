@@ -3,6 +3,8 @@
 // Madeira Converter Exception: see LICENSE-EXCEPTION.md
 // Modified by BCD (thebcd69), 2026-10-18: the setup screens moved to BCDSetupView.swift with BCD's own
 // look and wording; Settings › Steam reworded.
+// Modified for BCD-RobloxDev on 2026-11-17: a first-run page downloads Roblox Studio and VS Code and
+// starts Dev Mode; the usual pages stay available from Settings › Run setup again.
 
 import SwiftUI
 import UIKit
@@ -38,8 +40,9 @@ enum OnboardingRules {
     /// 1 was the first setup, stored as `madeiraOnboardingDone` (no longer read); 2 adds
     /// Install LocalDevVPN, on-device pairing and the Madeira JIT shortcut; 3 adds the
     /// Wine Mono download; 4 adds the Visual C++ runtime download (builds without
-    /// Microsoft's DLLs: BCD's public ones).
-    static let revision = 4
+    /// Microsoft's DLLs: BCD's public ones); 5 adds this fork's first-run
+    /// Roblox Studio + VS Code install and Dev Mode start.
+    static let revision = 5
 
     /// `env.MADEIRA_ONBOARDING = 0` (bcd.cfg or the environment) never opens
     /// setup and hides "Run setup again". On by default.
@@ -47,7 +50,7 @@ enum OnboardingRules {
 
     enum Step: String, CaseIterable {
         case welcome, localDevVPN = "localdevvpn", jit, signIn = "sign-in", dockClient = "dock-client",
-             wineMono = "wine-mono", vcRuntime = "vc-runtime", done
+             wineMono = "wine-mono", vcRuntime = "vc-runtime", devSetup = "dev-setup", done
 
         /// The revision whose setup first had this page.
         var introduced: Int {
@@ -55,6 +58,7 @@ enum OnboardingRules {
             case .localDevVPN: return 2
             case .wineMono: return 3
             case .vcRuntime: return 4
+            case .devSetup: return 5
             default: return 1
             }
         }
@@ -71,17 +75,26 @@ enum OnboardingRules {
     /// Night round 2026-11-11 (A1 S8; HZCYB2, C4X44R, WMCY7N: a fresh install signed without get-task-allow walked through LocalDevVPN, JIT, sign-in, the
     /// Dock client, Wine Mono and the VC++ runtime and then said at the first Play that JIT can never turn on): a copy that is not `debuggable` has
     /// only the welcome page, which says so, and the done page; every other page needs JIT or a prefix that cannot exist without it.
+    ///
+    /// BCD-RobloxDev: with `devSetup` the first run shows only the welcome page, this fork's automatic
+    /// install page and done. The JIT, sign-in and component pages stay available from Settings › Run
+    /// setup again, which calls this without `devSetup`.
     static func steps(signIn: Bool, dock: Bool, localDevVPN: Bool = false, wineMono: Bool = false,
-                      vcRuntime: Bool = false, debuggable: Bool = true, since: Int = 0) -> [Step] {
+                      vcRuntime: Bool = false, devSetup: Bool = false, debuggable: Bool = true, since: Int = 0) -> [Step] {
         guard debuggable else { return [.welcome, .done] }
-        var list: [Step] = [.welcome]
-        if localDevVPN { list.append(.localDevVPN) }
-        list.append(.jit)
-        if signIn || dock { list.append(.signIn) }
-        if dock { list.append(.dockClient) }
-        if wineMono { list.append(.wineMono) }
-        if vcRuntime { list.append(.vcRuntime) }
-        list.append(.done)
+        var list: [Step]
+        if devSetup {
+            list = [.welcome, .devSetup, .done]
+        } else {
+            list = [.welcome]
+            if localDevVPN { list.append(.localDevVPN) }
+            list.append(.jit)
+            if signIn || dock { list.append(.signIn) }
+            if dock { list.append(.dockClient) }
+            if wineMono { list.append(.wineMono) }
+            if vcRuntime { list.append(.vcRuntime) }
+            list.append(.done)
+        }
         return since > 0 ? list.filter { $0 == .welcome || $0 == .done || $0.introduced > since } : list
     }
 
@@ -89,7 +102,7 @@ enum OnboardingRules {
     /// A copy that cannot use JIT (`debuggable` false) has the welcome page's message to give, so it counts as having something to show.
     static func hasSetup(_ steps: [Step], debuggable: Bool = true) -> Bool {
         !debuggable || steps.contains(.jit) || steps.contains(.signIn) || steps.contains(.dockClient) || steps.contains(.wineMono)
-            || steps.contains(.vcRuntime)
+            || steps.contains(.vcRuntime) || steps.contains(.devSetup)
     }
 
     /// Whether setup opens by itself when the library appears.
@@ -136,10 +149,14 @@ enum OnboardingRules {
     /// The revision this device had seen when setup opened by itself after an update (only
     /// the pages added since are shown); 0 for a new install and for Run setup again.
     @Published private(set) var since = 0
+    /// BCD-RobloxDev's first run uses the short automatic install setup; Settings › Run setup again
+    /// shows the usual JIT, sign-in and component pages.
+    private var firstRunDevSetup = false
     var steps: [Step] { steps(since: since) }
     private func steps(since: Int) -> [Step] {
         OnboardingRules.steps(signIn: SteamSignIn.isEnabled, dock: MadeiraDock.enabled, localDevVPN: offerLocalDevVPN,
-                              wineMono: offerWineMono, vcRuntime: offerVCRuntime, debuggable: Self.debuggable, since: since)
+                              wineMono: offerWineMono, vcRuntime: offerVCRuntime, devSetup: firstRunDevSetup,
+                              debuggable: Self.debuggable, since: since)
     }
     /// Night round 2026-11-11 (A1 S8): this copy can take a debugger (get-task-allow); unknown signing flags count as debuggable (as MemoryRights does).
     static var debuggable: Bool { SigningStatus.current.debuggable }
@@ -153,14 +170,15 @@ enum OnboardingRules {
     func presentIfNeeded() {
         guard !considered else { return }
         considered = true
+        firstRunDevSetup = true
         offerWineMono = !WineMonoModel.available
         offerVCRuntime = !VCRuntime.shared.isAvailable
         guard OnboardingRules.shouldShow(seen: Self.seen, enabled: Self.enabled, steps: steps(since: Self.seen), debuggable: Self.debuggable) else { return }
         open(reason: "revision \(Self.seen)->\(OnboardingRules.revision)", since: Self.seen)
     }
 
-    /// Settings › Steam › Run setup again.
-    func rerun() { open(reason: "settings", since: 0) }
+    /// Settings › Accounts or JIT › Run setup again: the usual setup, not this fork's short install page.
+    func rerun() { firstRunDevSetup = false; open(reason: "settings", since: 0) }
 
     private func open(reason: String, since: Int) {
         // Never over a running session.

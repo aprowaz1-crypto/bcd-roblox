@@ -103,14 +103,16 @@ require('if !OnboardingModel.debuggable {' in welcome_page and 'Text(SigningStat
         and welcome_page.index('Text("This copy can\'t run games yet")') < welcome_page.index('if OnboardingModel.debuggable {')
         and welcome_page.index('if OnboardingModel.debuggable {') < welcome_page.index('primary("Let\'s go"'),
         'A1 S8: the welcome page of a copy without get-task-allow says so and offers OK; the list of pages, Let\'s go and Skip stay for every other copy')
-require('func rerun() { open(reason: "settings", since: 0) }' in model,
-        'Run setup again shows every page')
+require('func rerun() { firstRunDevSetup = false; open(reason: "settings", since: 0) }' in model,
+        'Run setup again shows every page (and not the fork\'s short install page)')
 opener = block(model, 'private func open(reason: String, since: Int)')
 require('LibraryModel.shared.current == nil' in opener and 'wine_process_is_running() == 0' in opener and 'guard available' in opener,
         'setup never opens over a running session, or with nothing to set up')
 require('OnboardingRules.steps(signIn: SteamSignIn.isEnabled, dock: MadeiraDock.enabled, localDevVPN: offerLocalDevVPN,\n'
-        '                              wineMono: offerWineMono, vcRuntime: offerVCRuntime, debuggable: Self.debuggable, since: since)' in model,
-        'the pages follow the sign-in and Dock switches, whether LocalDevVPN, Wine Mono and the VC++ runtime are here, and the revision seen')
+        '                              wineMono: offerWineMono, vcRuntime: offerVCRuntime, devSetup: firstRunDevSetup,\n'
+        '                              debuggable: Self.debuggable, since: since)' in model
+        and 'func rerun() { firstRunDevSetup = false; open(reason: "settings", since: 0) }' in model,
+        'the pages follow the sign-in and Dock switches, and the fork\'s first run uses its short install page while Settings shows the usual setup')
 require('private var offerVCRuntime = !VCRuntime.shared.isAvailable' in model
         and 'offerVCRuntime = !VCRuntime.shared.isAvailable' in opener,
         'the VC++ page is offered only when neither the build nor a download has the runtime')
@@ -118,6 +120,11 @@ require('case .vcRuntime: vcRuntimePage' in setup and 'vcrt.install()' in block(
         and 'https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/' in block(setup, 'private var vcRuntimePage')
         and 'Accept and download' in block(setup, 'private var vcRuntimePage'),
         "setup: the VC++ page links Microsoft's license terms and downloads only on Accept")
+require('case .devSetup: devSetupPage' in setup and 'BCDLauncherModel.shared' in setup
+        and 'https://www.google.com/generate_204' in setup
+        and 'launcher.startFirstRunSetup()' in block(setup, 'private func startFirstRun')
+        and 'if started { model.finish() }' in setup,
+        "BCD-RobloxDev: the first-run page checks Google, downloads both installers and closes setup when the batch starts")
 require(opener.index('offerLocalDevVPN = !LocalDevVPN.isInstalled') < opener.index('[onboarding] shown')
         and opener.index('offerWineMono = !WineMonoModel.available') < opener.index('[onboarding] shown'),
         "LocalDevVPN's and Wine Mono's pages are decided once, when setup opens, so installing on the way does not renumber the steps")
@@ -256,7 +263,7 @@ import Foundation
                "JIT remains when Steam setup is unavailable")
         // Wine Mono (revision 3): offered when this device has none, before done; after an
         // update from revision 2 only it is shown.
-        expect(R.revision == 4 && R.Step.wineMono.rawValue == "wine-mono" && R.Step.wineMono.introduced == 3
+        expect(R.revision == 5 && R.Step.wineMono.rawValue == "wine-mono" && R.Step.wineMono.introduced == 3
                && R.Step.localDevVPN.introduced == 2 && R.Step.jit.introduced == 1, "revision 3 added Wine Mono")
         // The Visual C++ runtime (revision 4): only on builds without it; the owner's builds
         // bundle it, so an update to revision 4 opens nothing there.
@@ -267,6 +274,16 @@ import Foundation
                && R.shouldShow(seen: 3, enabled: true, steps: R.steps(signIn: true, dock: true, vcRuntime: true, since: 3))
                && R.hasSetup([.welcome, .vcRuntime, .done]),
                "revision 4 adds the VC++ runtime page, shown after an update only where the runtime is missing")
+        // BCD-RobloxDev (revision 5): the first run shows only welcome, the automatic install page and
+        // done; after an update from revision 4 the install page alone is new. Settings reruns the full setup.
+        expect(R.Step.devSetup.rawValue == "dev-setup" && R.Step.devSetup.introduced == 5
+               && R.steps(signIn: true, dock: true, devSetup: true) == [.welcome, .devSetup, .done]
+               && R.steps(signIn: true, dock: true, devSetup: true, since: 4) == [.welcome, .devSetup, .done]
+               && R.steps(signIn: true, dock: true, devSetup: true, since: 5) == [.welcome, .done]
+               && R.steps(signIn: true, dock: true, devSetup: true, debuggable: false) == [.welcome, .done]
+               && R.shouldShow(seen: 4, enabled: true, steps: R.steps(signIn: true, dock: true, devSetup: true, since: 4))
+               && R.hasSetup([.welcome, .devSetup, .done]),
+               "revision 5 adds the short first-run install page, once after an update from revision 4")
         expect(R.steps(signIn: true, dock: true, wineMono: true) == [.welcome, .jit, .signIn, .dockClient, .wineMono, .done],
                "Wine Mono's page comes last, before done")
         expect(R.steps(signIn: true, dock: true, localDevVPN: true, wineMono: true, since: 2) == [.welcome, .wineMono, .done]

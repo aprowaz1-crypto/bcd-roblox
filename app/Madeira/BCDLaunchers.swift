@@ -551,6 +551,11 @@ struct BCDLauncherStatus: Equatable {
     func startInstaller(_ spec: BCDLauncherSpec)
     /// Starts the installed launcher's program as the session's first program.
     func startLauncher(_ spec: BCDLauncherSpec, program: String)
+    /// BCD-RobloxDev's first run: downloads both installers without starting Wine, reporting each
+    /// launcher's title and bytes. The generated batch then installs them and opens Dev Mode.
+    func downloadSetupInstallers(progress: @escaping @Sendable (String, Int64, Int64) -> Void) async throws
+    /// Starts that one batch as the session's first program.
+    func startFirstRun()
 }
 
 /// Where the model finds its engine: the app's (BCDLaunchersLive, found by its Objective-C name, as this
@@ -649,6 +654,53 @@ struct BCDLauncherStatus: Equatable {
         guard status(spec).download != nil else { return }
         engine?.cancelDownload()
         task?.cancel()
+    }
+
+    // MARK: - BCD-RobloxDev first run
+
+    struct SetupProgress: Equatable {
+        var title: String
+        var received: Int64
+        var total: Int64
+    }
+
+    /// The first-run install's one progress line ("Roblox Studio", "VS Code").
+    @Published private(set) var setup: SetupProgress?
+    /// Why the first-run install could not go on.
+    @Published private(set) var setupMessage: String?
+    /// Set when the batch has been handed to Play, so the setup sheet can close.
+    @Published private(set) var firstRunStarted = false
+    private var setupTask: Task<Void, Never>?
+
+    /// Downloads the Studio and VS Code installers (no Wine session yet), then hands the single
+    /// install-and-open batch to Play. The setup screen calls this once, after its Google check.
+    func startFirstRunSetup() {
+        guard let engine, setupTask == nil, !firstRunStarted else { return }
+        setupMessage = nil
+        setupTask = Task { [weak self] in
+            do {
+                try await engine.downloadSetupInstallers { title, received, total in
+                    Task { @MainActor in self?.setup = SetupProgress(title: title, received: received, total: total) }
+                }
+                try Task.checkCancellation()
+                guard let self else { return }
+                self.setup = nil
+                self.firstRunStarted = true
+                engine.startFirstRun()
+            } catch {
+                guard let self else { return }
+                let cancelled = error is CancellationError || (error as? BCDLauncherError) == .cancelled
+                self.setup = nil
+                self.setupMessage = cancelled ? nil
+                    : (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+            self?.setupTask = nil
+        }
+    }
+
+    func cancelFirstRunSetup() {
+        engine?.cancelDownload()
+        setupTask?.cancel()
     }
 
     func dismissMessage(_ spec: BCDLauncherSpec) { change(spec) { $0.message = nil } }

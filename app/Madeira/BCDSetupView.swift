@@ -5,8 +5,11 @@
 // Portions copyright 2026 creeper4004: colour profiles and Settings > Appearance, from thebcd69/bcd-games pull request #27; GPL-3.0-only, modified for BCD in November 2026. See THIRD-PARTY-NOTICES.md.
 // Derived from Onboarding.swift (125hz) by BCD (thebcd69), 2026-10-18: the same setup steps with BCD's
 // own look and wording. Not BCD Material: LICENSE-BCD.md's terms cover files BCD wrote from scratch.
+// Modified for BCD-RobloxDev on 2026-11-17: the first-run page downloads Roblox Studio and VS Code,
+// checks the connection through Google, then starts one batch that installs both and opens Dev Mode.
 
 import SwiftUI
+import Foundation
 import UIKit
 import UniformTypeIdentifiers
 
@@ -25,7 +28,11 @@ struct OnboardingView: View {
     @ObservedObject private var shortcut = JITNetworkShortcut.shared
     @ObservedObject private var mono = WineMonoModel.shared
     @ObservedObject private var vcrt = VCRuntime.shared
+    @ObservedObject private var launcher = BCDLauncherModel.shared
     @State private var showSignIn = false
+    /// BCD-RobloxDev's first-run page: the Google check and the one automatic install.
+    @State private var online: Bool?
+    @State private var firstRunStarted = false
     /// For BCD's pairing panel (BCDJIT.swift); setup is touch only, so it reads no controller.
     @StateObject private var pairingFocus = BCDFocus(watchControllers: false)
     @State private var importingPairingFile = false
@@ -60,6 +67,7 @@ struct OnboardingView: View {
                         case .dockClient: dockClientPage
                         case .wineMono: wineMonoPage
                         case .vcRuntime: vcRuntimePage
+                        case .devSetup: devSetupPage
                         case .done: donePage
                         }
                     }
@@ -98,6 +106,10 @@ struct OnboardingView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { localDevVPNInstalled = LocalDevVPN.isInstalled }
+        }
+        .onChange(of: launcher.firstRunStarted) { _, started in
+            // The batch is with Play: close setup so the installer's console can draw.
+            if started { model.finish() }
         }
     }
 
@@ -588,6 +600,74 @@ struct OnboardingView: View {
                 }
             }
         }
+    }
+
+    /// BCD-RobloxDev's first run: one page that says what will be installed, checks that the internet
+    /// works (through Google), downloads both public installers itself, then hands a single batch to
+    /// Play to run them and open Dev Mode. Nothing here starts Wine until both downloads are kept.
+    private var devSetupPage: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            header("Roblox Studio + VS Code", symbol: "hammer")
+            Text("BCD will download Roblox Studio and Visual Studio Code from their own servers, install them, then open Dev Mode with both programs and a Command Prompt.")
+                .font(BCDStyle.body(17)).fixedSize(horizontal: false, vertical: true)
+            note("This needs working internet. BCD checks the connection through Google before downloading; no Google page is opened.", symbol: "wifi")
+            switch online {
+            case nil:
+                status("Checking the internet through Google…")
+            case false:
+                failure("BCD could not reach Google. Connect to Wi‑Fi (or allow cellular data) and try again.")
+                primary("Check again", symbol: "arrow.clockwise") {
+                    Task { await checkInternet() }
+                }
+            case true:
+                if let setup = launcher.setup {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ProgressView(value: setup.total > 0 ? Double(setup.received) / Double(setup.total) : 0)
+                            .tint(BCDStyle.fuchsia)
+                        Text("\(setup.title): \(setup.total > 0 ? "\(setup.received / 1_000_000) of \(setup.total / 1_000_000) MB" : "connecting…")")
+                            .font(BCDStyle.body(14)).foregroundStyle(BCDStyle.textSoft).monospacedDigit()
+                    }
+                    .bcdCard(padding: 14)
+                    secondary("Cancel") { launcher.cancelFirstRunSetup() }
+                } else if let message = launcher.setupMessage {
+                    failure(message)
+                    primary("Try again", symbol: "arrow.clockwise") { startFirstRun() }
+                    secondary("Skip for now") { model.skip() }
+                } else if launcher.firstRunStarted {
+                    status("Installing both programs and starting Dev Mode…")
+                } else {
+                    status("Internet works. Ready to download.")
+                    primary("Install automatically", symbol: "arrow.down.circle.fill") { startFirstRun() }
+                    secondary("Skip for now") { model.skip() }
+                }
+            }
+        }
+        .task {
+            await checkInternet()
+            if online == true { startFirstRun() }
+        }
+    }
+
+    /// A HEAD request to Google's no-content endpoint: only a reachable internet, no page shown and
+    /// no address kept. This is the same connection the installer downloads need.
+    private func checkInternet() async {
+        guard let url = URL(string: "https://www.google.com/generate_204") else { online = false; return }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.httpMethod = "HEAD"
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            online = (200..<400).contains(code)
+        } catch {
+            online = false
+        }
+    }
+
+    private func startFirstRun() {
+        guard !firstRunStarted else { return }
+        firstRunStarted = true
+        LogStore.shared.log("[onboarding] first-run install of Roblox Studio and VS Code")
+        launcher.startFirstRunSetup()
     }
 
     private var donePage: some View {

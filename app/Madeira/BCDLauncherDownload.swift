@@ -22,6 +22,8 @@ enum BCDLauncherError: LocalizedError, Equatable {
     case notEnoughSpace(title: String, gigabytes: Int)
     /// A launcher BCD builds from programs already installed: there is nothing to download (Dev Mode).
     case nothingToDownload(title: String)
+    /// A first-run install was asked for while another Wine session is still running.
+    case setupBlocked(reason: String)
     case saving(String)
     /// A downloaded component whose size or SHA-256 is not the pinned one (BCDGecko.swift).
     case checksum(what: String)
@@ -37,6 +39,7 @@ enum BCDLauncherError: LocalizedError, Equatable {
         case .notAnInstaller: return "not-an-installer"
         case .notEnoughSpace: return "no-space"
         case .nothingToDownload: return "nothing-to-download"
+        case .setupBlocked: return "blocked"
         case .saving: return "saving"
         case .checksum: return "checksum"
         case .cancelled: return "cancelled"
@@ -59,6 +62,8 @@ enum BCDLauncherError: LocalizedError, Equatable {
             return "Not enough free space: \(title) needs about \(gigabytes) GB free on this device."
         case .nothingToDownload(let title):
             return "\(title) has no installer to download: it starts the programs you already have installed."
+        case .setupBlocked(let reason):
+            return reason
         case .saving(let detail):
             return "The file could not be saved: \(detail)"
         case .checksum(let what):

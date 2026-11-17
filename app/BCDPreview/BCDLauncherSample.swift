@@ -45,6 +45,12 @@ import Foundation
     func startInstaller(_ spec: BCDLauncherSpec) { print("[preview] launcher installer \(spec.id)") }
     func startLauncher(_ spec: BCDLauncherSpec, program: String) { print("[preview] launcher open \(spec.id)") }
 
+    func downloadSetupInstallers(progress: @escaping @Sendable (String, Int64, Int64) -> Void) async throws {
+        progress("Roblox Studio", 14_000_000, 14_000_000)
+        progress("VS Code", 286_000_000, 286_000_000)
+    }
+    func startFirstRun() { print("[preview] launcher first run") }
+
     /// Reads -BCDSection, puts the sample engine in the model and the chosen chip in the library's filter.
     static func prepare(_ section: String?, defaults: UserDefaults = .standard) {
         let parts = (section ?? "").split(separator: "+").map(String.init)

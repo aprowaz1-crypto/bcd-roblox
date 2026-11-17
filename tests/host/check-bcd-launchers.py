@@ -136,6 +136,11 @@ check('"FIntStudioEmbeddedAuthorizationDialogLoadingTimeoutMillis", "1"' in read
       and '"FFlagDebugGraphicsPreferD3D11", "true"' in read(APP / "RobloxAuth.swift")
       and 'callbackScheme = "roblox-studio-auth"' in read(APP / "RobloxAuth.swift"),
       "Studio's sign-in timeout flags, D3D11 preference and Roblox's callback scheme live in one place")
+check("func downloadSetupInstallers" in files["BCDLaunchers.swift"] and "func startFirstRun()" in files["BCDLaunchers.swift"]
+      and "bcd-dev/first-run.bat" in files["BCDLaunchersLive.swift"]
+      and "https://www.google.com/generate_204" in read(APP / "BCDSetupView.swift")
+      and "case .devSetup: devSetupPage" in read(APP / "BCDSetupView.swift"),
+      "the first-run page checks the internet through Google, downloads both installers and starts one batch")
 common = re.search(r"static let commonSessionConfig = \[(.*?)\]", files["BCDLaunchers.swift"])
 check(common and "env.MADEIRA_GDI_SHARED_SECTION = 1" in common.group(1) and "env.MADEIRA_MSIEXEC_SYSTEM32 = 1" in common.group(1),
       "the common session lines are the GDI table and msiexec in system32")
@@ -351,6 +356,11 @@ func touch(_ url: URL, _ data: Data = Data("x".utf8)) {
     }
     func startInstaller(_ spec: BCDLauncherSpec) { calls.append("start-installer:" + spec.id) }
     func startLauncher(_ spec: BCDLauncherSpec, program: String) { calls.append("start-launcher:" + spec.id + ":" + program) }
+    func downloadSetupInstallers(progress: @escaping @Sendable (String, Int64, Int64) -> Void) async throws {
+        calls.append("setup-download")
+        for spec in [BCDLauncherSpec.robloxStudio, .vscode] { progress(spec.title, 100, 100) }
+    }
+    func startFirstRun() { calls.append("start-first-run") }
 }
 
 @MainActor func waitIdle(_ model: BCDLauncherModel) async {
@@ -614,6 +624,15 @@ func touch(_ url: URL, _ data: Data = Data("x".utf8)) {
         model.open(bn)
         check(engine.calls == ["blocker", "start-launcher:battlenet:Program Files (x86)/Battle.net/Battle.net.exe"], "Open starts the installed program once; a second tap while it starts does nothing", engine.calls.joined(separator: ","))
         await waitIdle(model)
+
+        // ---- BCD-RobloxDev first run: both installers, then the one batch, no second session
+        engine.calls = []
+        let firstRunModel = BCDLauncherModel(engine: engine)
+        firstRunModel.startFirstRunSetup()
+        for _ in 0..<400 { if firstRunModel.firstRunStarted { break }; try? await Task.sleep(nanoseconds: 10_000_000) }
+        check(engine.calls == ["setup-download", "start-first-run"] && firstRunModel.firstRunStarted
+              && firstRunModel.setup == nil && firstRunModel.setupMessage == nil,
+              "first run downloads both installers then starts the single batch", engine.calls.joined(separator: ","))
 
         // ---- Wine Gecko
         let packages = BCDGeckoPin.packages

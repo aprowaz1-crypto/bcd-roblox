@@ -33,6 +33,18 @@ All three live in the Library next to Battle.net and the EA app, in this order:
    hidden Studio sign-in loop and an interactive Command Prompt. Closing that Command Prompt
    ends the session.
 
+## First run
+
+On a fresh install (and once after updating to this version) BCD opens a short setup instead of the
+Library: **Roblox Studio + VS Code**. It first checks the connection with a HEAD request to
+`https://www.google.com/generate_204` — only a reachability check, no page is opened — then, once the
+connection is up, downloads Roblox's installer (about 14 MB) and Microsoft's VS Code installer
+(about 290 MB) **before starting any Wine session**. When both files are kept, one generated
+`drive_c/bcd-dev/first-run.bat` runs VS Code's silent installer, Roblox's installer, writes Studio's
+settings and calls `dev.bat`, whose Command Prompt holds the single session open. Setup closes as
+soon as that batch is handed to Play. The usual BCD setup (JIT, sign-in, Wine Mono, VC++) remains
+available under Settings › Accounts or JIT › Run setup again.
+
 BCD starts **one Wine session per run of the app**. After an install or an Open, swipe BCD away
 in the app switcher and reopen it before starting the next program. Dev Mode is the way to run
 Studio and VS Code together without that restart between them.
