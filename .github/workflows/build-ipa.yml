@@ -24,7 +24,9 @@ jobs:
     # no longer exists and skipped every fork). The owner's repository still runs
     # its private OTA step; this fork uploads the unsigned IPA as an artifact.
     if: github.repository == 'thebcd69/bcd-games' || github.repository == 'aprowaz1-crypto/bcd-roblox'
-    runs-on: macos-15
+    # BCD-RobloxDev: arm64 macOS runners are often unavailable to forks; the
+    # workflow cross-compiles for arm64 iOS and handles an x86_64 host already.
+    runs-on: macos-15-intel
     # contents: write only so the token can see DRAFT releases, which is where
     # the Metal Shader Converter installer is kept (drafts are not public).
     # Nothing in this job creates, edits or pushes anything.
