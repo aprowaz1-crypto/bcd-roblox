@@ -20,8 +20,10 @@ concurrency:
 
 jobs:
   build:
-    # madeira-bcd: runs only in the owner's repository; a fork's run is skipped.
-    if: github.repository == 'thebcd69/madeira-bcd'
+    # BCD-RobloxDev: build in this fork too (the old gate named a repository that
+    # no longer exists and skipped every fork). The owner's repository still runs
+    # its private OTA step; this fork uploads the unsigned IPA as an artifact.
+    if: github.repository == 'thebcd69/bcd-games' || github.repository == 'aprowaz1-crypto/bcd-roblox'
     runs-on: macos-15
     # contents: write only so the token can see DRAFT releases, which is where
     # the Metal Shader Converter installer is kept (drafts are not public).
@@ -5785,12 +5787,24 @@ jobs:
       - name: Package Madeira and Madeira2 unsigned IPAs
         run: python3 tools/ota-variants.py package build-out/Madeira.xcarchive/Products/Applications/Madeira.app build-out ${{ steps.bn.outputs.n }}
 
+      # BCD-RobloxDev: keep the unsigned IPA in this fork's Actions artifact. The
+      # owner's public repository deliberately does not do this (its only copy is
+      # the signed IPA in the private bucket); a fork has none of those secrets.
+      - name: Upload the unsigned IPA (fork build)
+        if: github.repository == 'aprowaz1-crypto/bcd-roblox'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bcd-roblox-unsigned-ipa
+          path: build-out/*.ipa
+          if-no-files-found: error
+
       # Over-the-air install: sign with the owner's certificate (kept in the
       # owner's PRIVATE bucket, never in the repository) and put both signed IPAs
       # plus installation pages (7-day pre-signed links) in the same bucket.
       # A signing/upload failure is caught by the private-bucket gate below.
       - name: Sign for OTA install (private bucket)
         id: ota
+        if: github.repository == 'thebcd69/bcd-games'
         continue-on-error: true
         env:
           B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
@@ -5813,7 +5827,7 @@ jobs:
       # private R2 bucket (the OTA step above). If that step did not succeed,
       # the build fails here instead of keeping the IPA somewhere public.
       - name: Check the IPA reached the private bucket
-        if: steps.ota.outcome != 'success'
+        if: steps.ota.outcome != 'success' && github.repository == 'thebcd69/bcd-games'
         run: |
           echo "::error::OTA signing/upload did not succeed: this build's IPA was not kept anywhere (no GitHub artifact by design)"
           exit 1

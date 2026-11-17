@@ -617,7 +617,8 @@ struct OnboardingView: View {
             case false:
                 failure("BCD could not reach Google. Connect to Wi‑Fi (or allow cellular data) and try again.")
                 primary("Check again", symbol: "arrow.clockwise") {
-                    Task { await checkInternet() }
+                    Task { await self.checkInternet() }
+                    return
                 }
             case true:
                 if let setup = launcher.setup {

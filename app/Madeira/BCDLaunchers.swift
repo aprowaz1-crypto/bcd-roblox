@@ -694,7 +694,7 @@ struct BCDLauncherStatus: Equatable {
                 self.setupMessage = cancelled ? nil
                     : (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
-            self?.setupTask = nil
+            if let self { self.setupTask = nil }
         }
     }
 
