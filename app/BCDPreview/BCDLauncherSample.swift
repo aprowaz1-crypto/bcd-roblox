@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright 2026 thebcd69 (BCD)
 // BCD Material: additional terms under GPL-3.0 section 7 apply; see LICENSE-BCD.md.
+// Modified for BCD-RobloxDev on 2026-11-17: this fork's three launcher cards.
 
 import Foundation
 
 /// The launchers' engine on sample data (BCDLaunchers.swift), for the preview app. Only the preview app compiles this file; the
 /// app's engine is BCDLaunchersLive. Screens (with -BCDTab library):
 ///   -BCDSection launcher-battlenet | launcher-eaapp               the launcher's chip, not installed
+///   -BCDSection launcher-robloxstudio | launcher-vscode | launcher-devmode   this fork's cards, not ready
 ///   -BCDSection launcher-battlenet+installed                       installed: Open
+///   -BCDSection launcher-robloxstudio+installed                    Studio ready: Open, with the browser sign-in note
+///   -BCDSection launcher-devmode+installed                         Dev Mode ready: Start Dev Mode, no Install button
 ///   -BCDSection launcher-battlenet+downloading                     the installer's download, part way
 ///   -BCDSection launcher-battlenet+failed                          a download that failed
 ///   -BCDSection launcher-battlenet+starting                        Open was pressed: Starting…

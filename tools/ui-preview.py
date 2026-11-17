@@ -109,9 +109,11 @@ ENGINE_BOUND |= {"BCDSchedHintsLive.swift"}
 # (BCDPadAuto.swift); the engine's read count, the controller and the timer stay out.
 ENGINE_BOUND |= {"BCDPadAutoLive.swift"}
 
-# PC launchers (Battle.net, EA app: BCDLaunchers.swift, BCDLauncherView.swift): their engine side stays out; the screens are
+# PC launchers (Battle.net, EA app, and this fork's Roblox Studio, VS Code and Dev Mode: BCDLaunchers.swift,
+# BCDLauncherView.swift): their engine side stays out; the screens are
 # -BCDTab library -BCDSection launcher-battlenet[+installed|downloading|failed|starting] (app/BCDPreview/BCDLauncherSample.swift).
-ENGINE_BOUND |= {"BCDLaunchersLive.swift"}
+# RobloxAuth.swift uses AuthenticationServices and the iOS window, so the preview builds neither it nor the live launcher engine.
+ENGINE_BOUND |= {"BCDLaunchersLive.swift", "RobloxAuth.swift"}
 
 # Round 604 (ajan55): the performance trace's sampler reads the frame ring, the memory and the heat; the launch check reads the game's folder; the debug run
 # and the game page's help rows read the engine. Their values and rules (BCDPerfTraceCore, BCDReadinessCore, BCDHelpCore, BCDGameHelp) build here.

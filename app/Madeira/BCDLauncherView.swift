@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright 2026 thebcd69 (BCD)
 // BCD Material: additional terms under GPL-3.0 section 7 apply; see LICENSE-BCD.md.
+// Modified for BCD-RobloxDev on 2026-11-17: cards for Roblox Studio, VS Code and Dev Mode.
 
 import SwiftUI
 
-/// The card the Library shows under a launcher's chip (Battle.net, EA app; BCDLaunchers.swift): Install when the
-/// launcher is not on the device, Open when it is, the installer's download in between. Plain text and plain
-/// symbols only: no company logo or cover art. The words are short; BCD never asks for a login here, the
-/// launcher's own window does.
+/// The card the Library shows under a launcher's chip (BCDLaunchers.swift): Install when the launcher is not on the
+/// device, Open when it is, the installer's download in between. Dev Mode has no installer: it starts the programs
+/// already installed. Plain text and plain symbols only: no company logo or cover art. The words are short; BCD never
+/// asks for a login here, the launcher's own window (or, for Roblox, BCD's own browser sheet) does.
 struct BCDLauncherPanel: View {
     let spec: BCDLauncherSpec
     @ObservedObject var model: BCDLauncherModel = .shared
@@ -39,7 +40,15 @@ struct BCDLauncherPanel: View {
     // MARK: What the launcher is doing
 
     @ViewBuilder private var state: some View {
-        if let download = status.download {
+        if spec.isComposed {
+            if status.installed {
+                BCDSectionKit.Headline(text: "Dev Mode is ready", symbol: "checkmark.circle.fill", tone: .good,
+                                       detail: "One session starts Roblox Studio, VS Code and a Command Prompt.")
+            } else {
+                BCDSectionKit.Headline(text: "Dev Mode needs a program", symbol: "arrow.down.circle", tone: .info,
+                                       detail: "Install Roblox Studio or VS Code first; Dev Mode starts whichever is there.")
+            }
+        } else if let download = status.download {
             BCDSectionKit.Headline(text: "Downloading \(download.what)", symbol: "arrow.down.circle", tone: .info,
                                    detail: download.what == "the installer"
                                        ? "From \(spec.hosts.sorted().first ?? "\(spec.company)'s server"), over HTTPS."
@@ -53,11 +62,27 @@ struct BCDLauncherPanel: View {
                                    detail: turningOnJIT ? "It starts as soon as JIT is on." : nil)
         } else if status.installed {
             BCDSectionKit.Headline(text: "\(spec.namedFirst) is installed", symbol: "checkmark.circle.fill", tone: .good,
-                                   detail: "Open it, then sign in and install your games in its own window.")
+                                   detail: installedDetail)
         } else {
             BCDSectionKit.Headline(text: "\(spec.namedFirst) isn't installed yet", symbol: "arrow.down.circle", tone: .info,
-                                   detail: "BCD downloads \(spec.companyPossessive) installer (\(spec.sizeHint)) and runs it. You sign in afterwards, in \(spec.named)'s own window.")
+                                   detail: missingDetail)
         }
+    }
+
+    private var installedDetail: String {
+        switch spec.kind {
+        case .studio:
+            return "Open it, then choose the browser when Studio asks to sign in; BCD opens Roblox's sign-in page itself."
+        case .editor:
+            return "Open it, then open a folder with File › Open Folder, or use the Command Prompt that Dev Mode opens."
+        case .devMode, .store:
+            return "Open it, then sign in and install your games in its own window."
+        }
+    }
+
+    private var missingDetail: String {
+        if let note = spec.note { return note }
+        return "BCD downloads \(spec.companyPossessive) installer (\(spec.sizeHint)) and runs it. You sign in afterwards, in \(spec.named)'s own window."
     }
 
     /// "1.2 MB of 4.7 MB", "1.2 MB", or "Connecting…" before the first byte.
@@ -73,12 +98,22 @@ struct BCDLauncherPanel: View {
         if status.download != nil {
             BCDSectionKit.ActionButton(title: "Cancel", symbol: "xmark", kind: .outline, fill: true,
                                        id: Self.prefix + "cancel") { model.cancel(spec) }
+        } else if spec.isComposed {
+            if status.installed {
+                BCDSectionKit.ActionButton(title: "Start Dev Mode", symbol: "terminal", kind: .primary, fill: true,
+                                           id: Self.prefix + "open", enabled: !starting) { model.open(spec) }
+            } else {
+                BCDSectionKit.ActionButton(title: "Install Roblox Studio or VS Code first", symbol: "arrow.down.circle",
+                                           kind: .quiet, fill: true, id: Self.prefix + "need", enabled: false) { }
+            }
         } else if status.installed {
             BCDSectionKit.ActionButton(title: "Open \(spec.title)", symbol: "play.fill", kind: .primary, fill: true,
                                        id: Self.prefix + "open", enabled: !starting) { model.open(spec) }
-            BCDSectionKit.ActionButton(title: "Install again", symbol: "arrow.down.circle", kind: .quiet,
-                                       id: Self.prefix + "reinstall", enabled: !starting) { model.install(spec) }
-        } else {
+            if spec.installerURL != nil {
+                BCDSectionKit.ActionButton(title: "Install again", symbol: "arrow.down.circle", kind: .quiet,
+                                           id: Self.prefix + "reinstall", enabled: !starting) { model.install(spec) }
+            }
+        } else if spec.installerURL != nil {
             BCDSectionKit.ActionButton(title: "Install \(spec.title)", symbol: "arrow.down.circle", kind: .primary, fill: true,
                                        id: Self.prefix + "install", enabled: !starting) { model.install(spec) }
         }
@@ -88,16 +123,37 @@ struct BCDLauncherPanel: View {
 
     @ViewBuilder private var notes: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let note = spec.note {
+                BCDSectionKit.Note(text: note, symbol: "info.circle")
+            }
             if spec.experimental {
                 BCDSectionKit.Note(text: "Experimental: \(spec.named) may not start, sign in or install games on every device.",
                                    symbol: "exclamationmark.triangle", tone: .warn)
             }
-            BCDSectionKit.Note(text: "BCD never sees your \(spec.title) login: you sign in in its own window.", symbol: "lock")
-            BCDSectionKit.Note(text: status.installed
-                               ? "BCD starts one program each time it opens. To open \(spec.named) after another session, swipe BCD away in the app switcher and open it again."
-                               : "The installer opens \(spec.named) itself when it finishes. Leave from BCD's menu when you are done; to open it later, swipe BCD away in the app switcher and open it again.",
-                               symbol: "arrow.counterclockwise")
-            BCDSectionKit.Note(text: "Games you install from \(spec.named) stay inside its window; BCD doesn't list them here.", symbol: "info.circle")
+            switch spec.kind {
+            case .studio:
+                BCDSectionKit.Note(text: "BCD opens Roblox's sign-in page in its own browser and hands the result to Studio. You type your login on Roblox's page; BCD keeps no password.", symbol: "lock")
+            case .devMode:
+                BCDSectionKit.Note(text: "Dev Mode runs one Windows session with the programs you have installed. Close its Command Prompt to leave.", symbol: "terminal")
+            case .editor:
+                BCDSectionKit.Note(text: "BCD runs Microsoft's installer without questions and never sees a login.", symbol: "lock")
+            case .store:
+                BCDSectionKit.Note(text: "BCD never sees your \(spec.title) login: you sign in in its own window.", symbol: "lock")
+            }
+            BCDSectionKit.Note(text: restartNote, symbol: "arrow.counterclockwise")
+            if spec.kind == .store {
+                BCDSectionKit.Note(text: "Games you install from \(spec.named) stay inside its window; BCD doesn't list them here.", symbol: "info.circle")
+            }
         }
+    }
+
+    private var restartNote: String {
+        if spec.isComposed {
+            return "BCD starts one session per run of the app. To start Dev Mode again, swipe BCD away in the app switcher and open it again."
+        }
+        if status.installed {
+            return "BCD starts one program each time it opens. To open \(spec.named) after another session, swipe BCD away in the app switcher and open it again."
+        }
+        return "The installer opens \(spec.named) itself when it finishes. Leave from BCD's menu when you are done; to open it later, swipe BCD away in the app switcher and open it again."
     }
 }

@@ -1399,6 +1399,7 @@ final class LibraryModel: ObservableObject {
         MetalBackedView.touchesSinceLaunch = 0   // round 625: the no-input hint counts this session's touches
         windowedSince = nil                      // round 625: the window hint's clock starts with each session
         Self.clearOpenURLRequests()              // round 625: a page asked for in an earlier session is not asked about now
+        BCDRobloxAuth.clearCallback(in: Self.drive)   // BCD-RobloxDev: a sign-in code left by an earlier session is never reused
         launching = true; overlayFields = entry.overlayFields ?? ["FPS", "Frame time", "RAM", "Battery"]
         displayMode = entry.displayMode
         activeEntry = entry; current = entry.id; menu = false; performance = entry.performance; liveLogs = entry.liveLogs
@@ -1558,6 +1559,26 @@ final class LibraryModel: ObservableObject {
                 continue
             }
             let host = url.host ?? "?"
+            // BCD-RobloxDev: Roblox Studio's own OAuth page goes to BCD's browser, not to the page prompt. Its callback
+            // is written into drive_c for the generated batch to hand back to Studio. Nothing is asked of the player
+            // here except Roblox's normal sign-in, and no answer is kept outside the prefix.
+            if BCDRobloxAuth.isStudioAuthorizeRequest(url) {
+                LogStore.shared.log("[roblox-auth] Studio sign-in page on \(host); opening BCD's browser")
+                Task { @MainActor in
+                    BCDRobloxAuthSession.shared.begin(authorizeURL: url) { [weak self] result in
+                        switch result {
+                        case .success(let callback):
+                            let written = BCDRobloxAuth.writeCallback(callback, in: LibraryModel.drive)
+                            LogStore.shared.log("[roblox-auth] callback \(written ? "handed to Studio" : "could not be saved in the prefix")")
+                            if !written { self?.error = "Roblox's sign-in finished, but BCD could not hand it to Studio. Try again." }
+                        case .failure(let error):
+                            let why = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                            LogStore.shared.log("[roblox-auth] sign-in stopped: \(why)")
+                        }
+                    }
+                }
+                continue
+            }
             guard MadeiraConfig.flag("MADEIRA_OPEN_URL") else {
                 LogStore.shared.log("[open-url] a page on \(host) was left: env.MADEIRA_OPEN_URL = 0")
                 continue

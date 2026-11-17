@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright 2026 thebcd69 (BCD)
 // BCD Material: additional terms under GPL-3.0 section 7 apply; see LICENSE-BCD.md.
+// Modified for BCD-RobloxDev on 2026-11-16: Roblox Studio, VS Code and the Dev Mode launcher.
 
 import Foundation
 
-// PC launchers in BCD (Battle.net first, the EA app second): a launcher is a program of its own
-// company that installs and starts games itself. BCD does not list its games; it only gets the
-// launcher onto the device and starts it. The Library has one chip per launcher (BCDLibraryView) and
-// the chip shows one card (BCDLauncherView): Install when the launcher is not there, Open when it is.
+// PC launchers in BCD (Battle.net, the EA app, and this fork's Roblox Studio, VS Code and Dev Mode):
+// a launcher is a program of its own company that installs and starts games itself. BCD does not
+// list its games; it only gets the launcher onto the device and starts it. The Library has one chip
+// per launcher (BCDLibraryView) and the chip shows one card (BCDLauncherView): Install when the
+// launcher is not there, Open when it is.
 //
 // Install downloads the company's official installer over HTTPS from the company's own download
 // host (BCDLauncherDownload.swift), saves it in drive_c, and starts it as the session's first program,
@@ -24,6 +26,19 @@ import Foundation
 
 // MARK: - The table
 
+/// What a launcher is for. The card's words, its buttons and the start of its session follow it; the
+/// engine work stays the same for every kind.
+enum BCDLauncherKind: Hashable {
+    /// A shop's own launcher (Battle.net, the EA app): its window installs and starts the games.
+    case store
+    /// Roblox Studio: its sign-in goes through BCD's browser bridge (RobloxAuth.swift).
+    case studio
+    /// A desktop program started as it is (VS Code).
+    case editor
+    /// A session BCD builds from the programs already installed (Roblox Studio + VS Code + cmd).
+    case devMode
+}
+
 /// One launcher: what it is called, where its installer comes from and where its program lands.
 struct BCDLauncherSpec: Identifiable, Hashable {
     /// A short word for ids and the Library filter: "battlenet".
@@ -36,8 +51,11 @@ struct BCDLauncherSpec: Identifiable, Hashable {
     var experimental = false
     /// An SF Symbol, the same plain one for every launcher: no company logo is used anywhere.
     var symbol = "macwindow"
-    /// The company's own installer address (copied from the company's download page).
-    let installerURL: URL
+    /// What the launcher is for (BCDLauncherKind): the card's words and the start's shape.
+    var kind = BCDLauncherKind.store
+    /// The company's own installer address (copied from the company's download page); nil for a
+    /// launcher BCD builds itself (Dev Mode), which downloads nothing.
+    let installerURL: URL?
     /// Every host the download may touch, the first request and each redirect: the company's own.
     let hosts: Set<String>
     /// What the installer is saved as in drive_c/bcd-launchers.
@@ -78,6 +96,12 @@ struct BCDLauncherSpec: Identifiable, Hashable {
     /// downloader (BCDGecko.swift) when it is not on the device yet. The EA app's installer does (build 592: Wine's
     /// own dialog took minutes at 70 KB/s); Battle.net's session log (build 592) has no Gecko line, so it does not.
     var needsGecko = false
+    /// A sentence the card shows for this launcher in particular (Roblox's browser sign-in, Dev Mode's programs);
+    /// nil keeps the card's general words.
+    var note: String?
+
+    /// A launcher BCD builds from other programs instead of downloading one (Dev Mode).
+    var isComposed: Bool { kind == .devMode }
 
     /// "Battle.net" or "EA app (experimental)".
     var label: String { experimental ? "\(title) (experimental)" : title }
@@ -115,8 +139,9 @@ struct BCDLauncherSpec: Identifiable, Hashable {
     /// BCD Dock session of one-time installs that runs the same installer from a Steam game's install script (DockInstallers.eaInstallSession).
     static var eaInstallerSessionLines: [String] { eaApp.sessionConfig + eaApp.installerOnlyConfig }
 
-    /// The launchers BCD offers, in the order the Library lists them.
-    static let all: [BCDLauncherSpec] = [battlenet, eaApp]
+    /// The launchers BCD offers, in the order the Library lists them. This fork puts the development
+    /// programs first: Roblox Studio, VS Code, then Dev Mode, which starts both in one session.
+    static let all: [BCDLauncherSpec] = [robloxStudio, vscode, devMode, battlenet, eaApp]
 
     /// Build 600 (the owner, 2026-10-24: the public release goes out without Battle.net and the EA app, hide them completely, with no
     /// switch to turn them on; the next local build turns them back on): no launcher chip, no launcher card, no library tile of a launcher's own
@@ -265,6 +290,68 @@ struct BCDLauncherSpec: Identifiable, Hashable {
                                                    "env.MADEIRA_X64_IMAGE_NOCOPY = 1", "pool-split = 1", "env.MADEIRA_X86_FAULT_DUMP = 1"],
         launcherOnlyConfig: ["env.MADEIRA_SC_PA_POOLS = 2", "env.MADEIRA_EA_CEF = 1", "env.MADEIRA_ALIAS_RELEASE = 1"], needsGecko: true, needsArticle: true,
         demandStartServices: ["PnkBstrA", "PnkBstrB"])
+
+    // MARK: - This fork's development launchers
+
+    /// Roblox's Studio installer (the link Studio's own download page serves on Windows). It installs a
+    /// versioned copy under the Wine user's Local AppData and starts Studio itself. The path has two
+    /// wildcards: the user's folder, then Roblox's "version-<hash>" folder (BCDLauncherFiles.resolve
+    /// follows every "*"). Roblox's own WebView2 sign-in is not used: BCD opens Roblox's OAuth page in
+    /// ASWebAuthenticationSession and leaves the callback in ProgramData/BCD/DevMode/auth.url for the
+    /// generated studio-auth.bat to hand to the running Studio (RobloxAuth.swift, BCDLaunchersLive).
+    static let robloxStudio = BCDLauncherSpec(
+        id: "robloxstudio", title: "Roblox Studio", company: "Roblox", experimental: true,
+        symbol: "hammer", kind: .studio,
+        installerURL: URL(string: "https://setup.rbxcdn.com/RobloxStudioInstaller.exe")!,
+        hosts: ["setup.rbxcdn.com"],
+        installerFile: "RobloxStudioInstaller.exe", sizeHint: "about 14 MB",
+        programs: ["users/*/AppData/Local/Roblox/Versions/version-*/RobloxStudioBeta.exe",
+                   "users/*/AppData/Local/Roblox/Versions/version-*/RobloxStudioLauncherBeta.exe"],
+        entryID: "0B09F597-6AA2-4863-9C0F-B868C080A2CD", setupEntryID: "434E1277-79BE-4BFA-A0A4-57F126337D02",
+        // A large Qt x64 program: no pool copy for its images (the EA app's row), and an English locale
+        // for its Qt and Chromium code. Since BCD never starts Studio's WebView2, its sign-in is the
+        // browser bridge above. Everything else is BCD's common launcher session.
+        sessionConfig: Self.commonSessionConfig + ["env.LC_ALL = en_US.UTF-8", "env.MADEIRA_X64_IMAGE_NOCOPY = 1", "pool-split = 1"],
+        minBytes: 8 << 20, maxBytes: 64 << 20, spaceGigabytes: 3,
+        note: "BCD opens Roblox's sign-in page itself and hands the result to Studio, so Studio's WebView2 sign-in is not needed.")
+
+    /// VS Code's arguments in the launcher card and in Dev Mode's batch, from one place so they cannot drift.
+    /// Electron is happier without a GPU process in Wine, and the workspace-trust prompt is noise for a
+    /// folder the player chose in BCD's own prefix.
+    static let vscodeArguments = "--disable-gpu --disable-workspace-trust"
+
+    /// Microsoft's Windows user installer for VS Code (the "User Setup" link on code.visualstudio.com). It
+    /// redirects to Microsoft's download host, which the downloader allows; the silent switches install it
+    /// into the Wine user's Local AppData without starting VS Code at the end.
+    static let vscode = BCDLauncherSpec(
+        id: "vscode", title: "VS Code", company: "Microsoft", experimental: true,
+        symbol: "curlybraces", kind: .editor,
+        installerURL: URL(string: "https://update.code.visualstudio.com/latest/win32-x64-user/stable")!,
+        hosts: ["update.code.visualstudio.com", "vscode.download.prss.microsoft.com"],
+        installerFile: "VSCodeUserSetup-x64.exe", sizeHint: "about 290 MB",
+        programs: ["users/*/AppData/Local/Programs/Microsoft VS Code/Code.exe",
+                   "Program Files/Microsoft VS Code/Code.exe"],
+        entryID: "D7EC1EBA-2CA5-4266-BDE5-784C9A9B61CE", setupEntryID: "ADEDC83B-8FF2-4306-BD39-10819EACD720",
+        sessionConfig: Self.commonSessionConfig + ["env.LC_ALL = en_US.UTF-8"],
+        launcherArguments: Self.vscodeArguments,
+        installerArguments: "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASKS=!runcode",
+        minBytes: 100 << 20, maxBytes: 420 << 20, spaceGigabytes: 2,
+        note: "BCD runs Microsoft's installer silently. Open a folder with File › Open Folder, or start in the Command Prompt that Dev Mode opens.")
+
+    /// Dev Mode: BCD builds one batch that starts whichever of Studio and VS Code are installed, a Command
+    /// Prompt, and the small polling loop that hands Studio the browser sign-in callback. One Wine session
+    /// for the whole workflow (BCD starts one session per run of the app). Nothing is downloaded: the card
+    /// points at Studio and VS Code, and this launcher appears once one of them is installed.
+    static let devMode = BCDLauncherSpec(
+        id: "devmode", title: "Dev Mode", company: "BCD", experimental: true,
+        symbol: "terminal", kind: .devMode,
+        installerURL: nil, hosts: [],
+        installerFile: "DevMode.exe", sizeHint: "built in",
+        programs: ["bcd-dev/dev.bat"],
+        entryID: "2B76BB04-98F4-4557-A27B-52E25B026CA4", setupEntryID: "9257FF35-5F1E-4A89-A7D8-A03D39A0F0A3",
+        sessionConfig: Self.commonSessionConfig,
+        spaceGigabytes: 0,
+        note: "Starts Roblox Studio, VS Code and a Command Prompt in one session. Install either program first; Dev Mode starts whichever is there.")
 }
 
 // MARK: - What a start looks like
@@ -288,6 +375,9 @@ struct BCDLauncherStart: Equatable {
     let sessionConfig: [String]
     /// Round 625: the services its batch sets to start on demand (BCDLauncherSpec.demandStartServices).
     var demandStartServices: [String] = []
+    /// A generated batch starts the program (the Studio sign-in bridge, Dev Mode); its arguments are the
+    /// batch's own, so the entry's Launch arguments are left empty (BCDLaunchersLive.startScript).
+    var isScript = false
 
     static func installer(_ spec: BCDLauncherSpec) -> BCDLauncherStart {
         BCDLauncherStart(windowsPath: spec.installerWindowsPath, arguments: spec.installerArguments, sessionConfig: spec.sessionConfig + spec.installerOnlyConfig,
@@ -296,6 +386,13 @@ struct BCDLauncherStart: Equatable {
     static func program(_ spec: BCDLauncherSpec, relative: String) -> BCDLauncherStart {
         BCDLauncherStart(windowsPath: BCDLauncherSpec.windowsPath(relative), arguments: spec.launcherArguments, sessionConfig: spec.programSessionConfig,
                          demandStartServices: spec.demandStartServices)
+    }
+    /// A start whose first program is a batch BCD writes (BCDLaunchersLive): no arguments reach it, and
+    /// an installer's session keeps its installer-only lines.
+    static func script(_ spec: BCDLauncherSpec, relative: String, installer: Bool = false) -> BCDLauncherStart {
+        BCDLauncherStart(windowsPath: BCDLauncherSpec.windowsPath(relative), arguments: "",
+                         sessionConfig: installer ? spec.sessionConfig + spec.installerOnlyConfig : spec.programSessionConfig,
+                         demandStartServices: spec.demandStartServices, isScript: true)
     }
 }
 
@@ -349,56 +446,56 @@ enum BCDLauncherFiles {
     /// `relative` ("Program Files (x86)/Battle.net/x.exe") as it is spelled on disk inside `drive`,
     /// found folder by folder without regard to upper and lower case (Wine makes "Program Files (x86)",
     /// a volume may be case sensitive); nil when it is not a file there, or when it would leave `drive`.
-    /// A part that is exactly "*" matches any folder there, the highest version-like name first (lead, 2026-10-24: the EA app
-    /// installs into "EA Desktop\<version>\EA Desktop" and reaches it through a junction, "EA Desktop\EA Desktop", which
-    /// this Wine keeps as its own reparse data, so the junction is no folder on the iOS side and only the versioned path resolves).
+    /// A part that is exactly "*" matches any folder there, the highest version-like name first. Every
+    /// "*" is followed, so Roblox's "users/<user>/AppData/Local/Roblox/Versions/version-<hash>/x.exe"
+    /// resolves. (The EA app's "<version>" path needs it too; the junction beside it is Wine's own
+    /// reparse data, not a folder on the iOS side.)
     static func resolve(_ relative: String, in drive: URL, fileManager fm: FileManager = .default) -> String? {
         let parts = relative.split(separator: "/").map(String.init)
         guard !parts.isEmpty, !parts.contains(".."), !parts.contains(".") else { return nil }
-        if let star = parts.firstIndex(of: "*") {
-            guard star > 0, star < parts.count - 1, parts.filter({ $0 == "*" }).count == 1,
-                  let base = resolveFolder(Array(parts[..<star]), in: drive, fileManager: fm) else { return nil }
-            let folder = drive.appendingPathComponent(base, isDirectory: true)
+        let root = drive.resolvingSymlinksInPath().standardizedFileURL
+        return search(parts, drive: drive, folder: drive, prefix: [], root: root, fm: fm)
+    }
+
+    /// The recursive half of `resolve`: `parts` remain below `folder`, whose spelling is `prefix`.
+    private static func search(_ parts: [String], drive: URL, folder: URL, prefix: [String], root: URL,
+                               fm: FileManager) -> String? {
+        guard let first = parts.first else { return nil }
+        let rest = Array(parts.dropFirst())
+        if first == "*" {
+            // A wildcard names a folder, never the first part and never the file itself.
+            guard !prefix.isEmpty else { return nil }
             let names = ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? [])
-                .filter { name in var dir: ObjCBool = false
-                    return fm.fileExists(atPath: folder.appendingPathComponent(name).path, isDirectory: &dir) && dir.boolValue }
+                .filter { name in
+                    var isFolder: ObjCBool = false
+                    return fm.fileExists(atPath: folder.appendingPathComponent(name, isDirectory: true).path, isDirectory: &isFolder) && isFolder.boolValue
+                }
                 .sorted { $0.compare($1, options: .numeric) == .orderedDescending }
             for name in names {
-                if let found = resolve(([base, name] + parts[(star + 1)...]).joined(separator: "/"), in: drive, fileManager: fm) {
-                    return found
-                }
+                let next = folder.appendingPathComponent(name, isDirectory: true)
+                guard inside(next, root: root, fm: fm) else { continue }
+                if let found = search(rest, drive: drive, folder: next, prefix: prefix + [name], root: root, fm: fm) { return found }
             }
             return nil
         }
-        var url = drive
-        var found: [String] = []
-        for (index, part) in parts.enumerated() {
-            guard let names = try? fm.contentsOfDirectory(atPath: url.path) else { return nil }
-            guard let name = names.contains(part) ? part : names.first(where: { $0.caseInsensitiveCompare(part) == .orderedSame }) else { return nil }
-            url.appendPathComponent(name, isDirectory: index < parts.count - 1)
-            found.append(name)
-        }
-        // A link out of drive_c is not the launcher.
-        guard url.resolvingSymlinksInPath().path.hasPrefix(drive.resolvingSymlinksInPath().path + "/") else { return nil }
+        guard let names = try? fm.contentsOfDirectory(atPath: folder.path),
+              let name = names.contains(first) ? first : names.first(where: { $0.caseInsensitiveCompare(first) == .orderedSame })
+        else { return nil }
+        let url = folder.appendingPathComponent(name, isDirectory: !rest.isEmpty)
+        guard inside(url, root: root, fm: fm) else { return nil }
         var isFolder: ObjCBool = false
-        guard fm.fileExists(atPath: url.path, isDirectory: &isFolder), !isFolder.boolValue else { return nil }
-        return found.joined(separator: "/")
+        guard fm.fileExists(atPath: url.path, isDirectory: &isFolder) else { return nil }
+        if rest.isEmpty {
+            guard !isFolder.boolValue else { return nil }
+            return (prefix + [name]).joined(separator: "/")
+        }
+        guard isFolder.boolValue else { return nil }
+        return search(rest, drive: drive, folder: url, prefix: prefix + [name], root: root, fm: fm)
     }
 
-    /// A folder path inside `drive`, spelled as on disk (case-insensitive), or nil.
-    static func resolveFolder(_ parts: [String], in drive: URL, fileManager fm: FileManager = .default) -> String? {
-        var url = drive
-        var found: [String] = []
-        for part in parts {
-            guard part != "*", let names = try? fm.contentsOfDirectory(atPath: url.path),
-                  let name = names.contains(part) ? part : names.first(where: { $0.caseInsensitiveCompare(part) == .orderedSame }) else { return nil }
-            url.appendPathComponent(name, isDirectory: true)
-            found.append(name)
-        }
-        var dir: ObjCBool = false
-        guard fm.fileExists(atPath: url.path, isDirectory: &dir), dir.boolValue,
-              url.resolvingSymlinksInPath().path.hasPrefix(drive.resolvingSymlinksInPath().path + "/") else { return nil }
-        return found.joined(separator: "/")
+    /// A path under `drive` once links are followed: a link out of drive_c is not the launcher.
+    private static func inside(_ url: URL, root: URL, fm: FileManager) -> Bool {
+        url.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(root.path + "/")
     }
 
     /// The first of the launcher's programs that exists.

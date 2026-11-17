@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright 2026 thebcd69 (BCD)
 # BCD Material: additional terms under GPL-3.0 section 7 apply; see LICENSE-BCD.md.
-"""PC launchers in BCD's Library (Battle.net, EA app) and Wine Gecko for their installers
-(app/Madeira/BCDLaunchers.swift, BCDLauncherView.swift, BCDLauncherDownload.swift, BCDLaunchersLive.swift,
-BCDGecko.swift, BCDGeckoSection.swift; docs/BCD-UI-ARCHITECTURE.md).
+"""PC launchers in BCD's Library (Battle.net, EA app, and this fork's Roblox Studio, VS Code and Dev Mode)
+and Wine Gecko for their installers (app/Madeira/BCDLaunchers.swift, BCDLauncherView.swift,
+BCDLauncherDownload.swift, BCDLaunchersLive.swift, RobloxAuth.swift, BCDGecko.swift, BCDGeckoSection.swift;
+docs/BCD-UI-ARCHITECTURE.md). Roblox's browser sign-in and the generated batches are engine-only;
+RobloxAuth.swift is checked for its header and project entry, not compiled on the host.
 
 Source checks:
   - BCD's licence header on every new file; the screens and models name no engine type; the live engine is in
@@ -59,7 +61,7 @@ ENGINE = ["LibraryModel", "LibraryEntry", "LibraryController", "LibraryPrefs", "
           "BCDLiveStore", "BCDLiveID", "BCDLaunchersLive", "wine_process_is_running", "wineserver_is_running", "StikJITHelper",
           "WineProcessBridge", "MadeiraDock", "SteamOwnedLibrary"]
 UI_FILES = ["BCDLaunchers.swift", "BCDLauncherView.swift", "BCDLauncherDownload.swift", "BCDGecko.swift", "BCDGeckoSection.swift"]
-ALL_FILES = UI_FILES + ["BCDLaunchersLive.swift"]
+ALL_FILES = UI_FILES + ["BCDLaunchersLive.swift", "RobloxAuth.swift"]
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--require-swift", action="store_true")
@@ -100,8 +102,8 @@ for n in UI_FILES:
 named = sorted({e for e in ENGINE if re.search(r"\b" + e + r"\b", bare(sample))})
 check(not named, "the preview sample names no engine type", named)
 preview_tool = read(R / "tools/ui-preview.py")
-bound = re.search(r"^ENGINE_BOUND \|= \{\"BCDLaunchersLive.swift\"\}", preview_tool, re.M)
-check(bound is not None, "BCDLaunchersLive.swift is in tools/ui-preview.py's ENGINE_BOUND")
+bound = re.search(r'^ENGINE_BOUND \|= \{"BCDLaunchersLive.swift", "RobloxAuth.swift"\}', preview_tool, re.M)
+check(bound is not None, "BCDLaunchersLive.swift and RobloxAuth.swift are in tools/ui-preview.py's ENGINE_BOUND")
 project = read(R / "app/Madeira.xcodeproj/project.pbxproj")
 for n in ALL_FILES:
     # Once in the build-file list and once in the Sources phase.
@@ -123,10 +125,22 @@ check("BCDLauncherStart.installer(spec)" in files["BCDLaunchersLive.swift"] and 
       "the live engine builds both starts from BCDLauncherStart")
 check("BCDLauncherConfig.merged(entry.config, lines: start.sessionConfig, id: spec.id)" in files["BCDLaunchersLive.swift"],
       "the launcher's session lines go into the entry's config at every start")
+check("start = .script(spec, relative: relative" in files["BCDLaunchersLive.swift"]
+      and "static func script(_ spec: BCDLauncherSpec" in files["BCDLaunchers.swift"] and "var isScript = false" in files["BCDLaunchers.swift"],
+      "Studio and Dev Mode open through generated batches, whose entries get no Launch arguments")
+check("BCDRobloxAuth.clearCallback(in: LibraryModel.drive)" in files["BCDLaunchersLive.swift"]
+      and "isStudioAuthorizeRequest(url)" in read(APP / "Library.swift")
+      and "writeCallback(callback, in: LibraryModel.drive)" in read(APP / "Library.swift"),
+      "a stale Roblox callback is cleared at every start and a fresh one is written by the browser sheet")
+check('"FIntStudioEmbeddedAuthorizationDialogLoadingTimeoutMillis", "1"' in read(APP / "RobloxAuth.swift")
+      and '"FFlagDebugGraphicsPreferD3D11", "true"' in read(APP / "RobloxAuth.swift")
+      and 'callbackScheme = "roblox-studio-auth"' in read(APP / "RobloxAuth.swift"),
+      "Studio's sign-in timeout flags, D3D11 preference and Roblox's callback scheme live in one place")
 common = re.search(r"static let commonSessionConfig = \[(.*?)\]", files["BCDLaunchers.swift"])
 check(common and "env.MADEIRA_GDI_SHARED_SECTION = 1" in common.group(1) and "env.MADEIRA_MSIEXEC_SYSTEM32 = 1" in common.group(1),
       "the common session lines are the GDI table and msiexec in system32")
-check(files["BCDLaunchers.swift"].count("sessionConfig: Self.commonSessionConfig") == 2, "both launchers take the common session lines")
+check(files["BCDLaunchers.swift"].count("sessionConfig: Self.commonSessionConfig") == 5,
+      "all five launchers take the common session lines")
 content_view = (R / 'app/Madeira/ContentView.swift').read_text()
 check('BCDLauncherSpec.all.first(where: { $0.entryID.caseInsensitiveCompare(entry.id.uuidString) == .orderedSame })' in content_view
       and 'BCDLauncherConfig.merged(entry.config, lines: spec.programSessionConfig, id: spec.id)' in content_view
@@ -157,10 +171,10 @@ check('sessionConfig: Self.commonSessionConfig + ["env.LC_ALL = en_US.UTF-8", "e
       '                                                   "env.MADEIRA_SPAWN_BLOCK = vc_redist-",\n'
       '                                                   "env.MADEIRA_EA_CEF_FLAGS = --disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows",\n'
       '                                                   "env.MADEIRA_X64_IMAGE_NOCOPY = 1", "pool-split = 1", "env.MADEIRA_X86_FAULT_DUMP = 1"]' in files["BCDLaunchers.swift"]
-      and files["BCDLaunchers.swift"].count('"env.LC_ALL = en_US.UTF-8"') == 1
+      and files["BCDLaunchers.swift"].count('"env.LC_ALL = en_US.UTF-8"') == 3
       and files["BCDLaunchers.swift"].count('"env.MADEIRA_APC_BUSY_QUEUE = 1"') == 1
       and files["BCDLaunchers.swift"].count('"env.MADEIRA_X86_FAULT_DUMP = 1"') == 2,
-      "the EA app (only) also gets an English locale (its installer died on a non-English locale, C7-2F79, build 593), keeps a finished "
+      "the EA app, Roblox Studio and VS Code get an English locale (the EA installer died on a non-English locale, C7-2F79, build 593), the EA app keeps a finished "
       "answer for a busy thread (its MSI's first custom action lost one: JunoInitializeSession 1603) and (round 624, 7NKYWT) the 32-bit "
       "fault report for its installer's custom-action hosts")
 # ajan32/ea-cef (2026-10-24): the EA app's Chromium lines belong to the installed launcher's session only, never to its installer's.
@@ -347,23 +361,46 @@ func touch(_ url: URL, _ data: Data = Data("x".utf8)) {
     @MainActor static func main() async {
         let specs = BCDLauncherSpec.all
         // ---- the table
-        check(specs.map(\.id) == ["battlenet", "eaapp"], "the table lists Battle.net, then the EA app")
+        check(specs.map(\.id) == ["robloxstudio", "vscode", "devmode", "battlenet", "eaapp"],
+              "the table lists Roblox Studio, VS Code, Dev Mode, Battle.net, then the EA app")
         check(Set(specs.map(\.id)).count == specs.count && Set(specs.map(\.entryID) + specs.map(\.setupEntryID)).count == specs.count * 2
               && (specs.map(\.entryID) + specs.map(\.setupEntryID)).allSatisfy { UUID(uuidString: $0) != nil }
               && !(specs.map(\.entryID) + specs.map(\.setupEntryID)).contains("AF046C35-C32A-497B-92BC-0BBD14F8CB61"),
               "ids and entry ids are unique UUIDs, none the Windows desktop's")
         let bn = BCDLauncherSpec.battlenet, ea = BCDLauncherSpec.eaApp
-        check(bn.installerURL.absoluteString == "https://downloader.battle.net/download/getInstallerForGame?os=win&gameProgram=BATTLENET_APP&version=Live"
+        let studio = BCDLauncherSpec.robloxStudio, code = BCDLauncherSpec.vscode, dev = BCDLauncherSpec.devMode
+        check(bn.installerURL!.absoluteString == "https://downloader.battle.net/download/getInstallerForGame?os=win&gameProgram=BATTLENET_APP&version=Live"
               && bn.hosts == ["downloader.battle.net"], "Battle.net's installer address is Blizzard's own, on downloader.battle.net")
-        check(ea.installerURL.absoluteString == "https://origin-a.akamaihd.net/EA-Desktop-Client-Download/installer-releases/EAappInstaller.exe"
+        check(ea.installerURL!.absoluteString == "https://origin-a.akamaihd.net/EA-Desktop-Client-Download/installer-releases/EAappInstaller.exe"
               && ea.hosts == ["origin-a.akamaihd.net"], "the EA app's installer address is the link on ea.com, on EA's own host")
+        check(studio.installerURL!.absoluteString == "https://setup.rbxcdn.com/RobloxStudioInstaller.exe"
+              && studio.hosts == ["setup.rbxcdn.com"] && studio.kind == .studio
+              && studio.programs[0].filter { $0 == "*" }.count == 2,
+              "Roblox Studio: the official installer, Roblox's own host, and two wildcards in its versioned path")
+        check(code.installerURL!.absoluteString == "https://update.code.visualstudio.com/latest/win32-x64-user/stable"
+              && code.hosts == ["update.code.visualstudio.com", "vscode.download.prss.microsoft.com"]
+              && code.launcherArguments == "--disable-gpu --disable-workspace-trust"
+              && code.installerArguments.contains("/VERYSILENT"),
+              "VS Code: Microsoft's user installer, its redirect host, silent switches and Electron's arguments")
+        check(dev.installerURL == nil && dev.hosts.isEmpty && dev.kind == .devMode && dev.isComposed
+              && dev.programs == ["bcd-dev/dev.bat"] && dev.note != nil,
+              "Dev Mode is built in: nothing is downloaded, and its batch starts the installed programs")
+        let scriptStart = BCDLauncherStart.script(dev, relative: "bcd-dev/dev.bat")
+        check(scriptStart.isScript && scriptStart.arguments.isEmpty && scriptStart.windowsPath == "C:\\bcd-dev\\dev.bat"
+              && scriptStart.inWineDesktop && scriptStart.startServices,
+              "a generated batch starts with no entry arguments, in a Wine desktop with services")
         for s in specs {
-            check(BCDLauncherNet.isAllowed(s.installerURL, hosts: s.hosts) && s.installerURL.scheme == "https" && s.hosts.contains(s.installerURL.host!),
-                  "\(s.title): the installer address is https on its download host")
-            check(s.programs.allSatisfy { !$0.hasPrefix("/") && !$0.contains("..") && !$0.contains("\\") && $0.hasSuffix(".exe") },
-                  "\(s.title): programs are drive_c-relative .exe paths with /")
-            check(s.installerWindowsPath == "C:\\bcd-launchers\\" + s.installerFile && s.installerRelativePath == "bcd-launchers/" + s.installerFile,
-                  "\(s.title): the installer is saved in C:\\bcd-launchers")
+            if let address = s.installerURL {
+                check(BCDLauncherNet.isAllowed(address, hosts: s.hosts) && address.scheme == "https" && s.hosts.contains(address.host!),
+                      "\(s.title): the installer address is https on its own download host")
+                check(s.installerWindowsPath == "C:\\bcd-launchers\\" + s.installerFile && s.installerRelativePath == "bcd-launchers/" + s.installerFile,
+                      "\(s.title): the installer is saved in C:\\bcd-launchers")
+            } else {
+                check(s.isComposed && s.installerURL == nil, "\(s.title): a composed launcher downloads nothing")
+            }
+            check(s.programs.allSatisfy { !$0.hasPrefix("/") && !$0.contains("..") && !$0.contains("\\")
+                    && ($0.hasSuffix(".exe") || ($0.hasSuffix(".bat") && s.isComposed)) },
+                  "\(s.title): programs are drive_c-relative paths with /")
             check(!s.sessionConfig.isEmpty && s.sessionConfig.contains("env.MADEIRA_MSIEXEC_SYSTEM32 = 1") && s.sessionConfig.contains("env.MADEIRA_GDI_SHARED_SECTION = 1"),
                   "\(s.title): its table entry holds the session lines")
         }
@@ -414,7 +451,17 @@ func touch(_ url: URL, _ data: Data = Data("x".utf8)) {
         check(BCDLauncherFiles.installedProgram(ea, in: junction) == "Program Files/Electronic Arts/EA Desktop/13.813.1.6327/EA Desktop/EADesktop.exe",
               "the EA app behind its junction: the highest version folder's program is found")
         check(BCDLauncherFiles.resolve("Program Files/*/x.exe", in: junction) == nil && BCDLauncherFiles.resolve("*/a/*/b.exe", in: junction) == nil,
-              "a wildcard finds nothing that is not there, and only one inner wildcard counts")
+              "a wildcard finds nothing that is not there")
+        // BCD-RobloxDev: Roblox's path has two wildcards (user name, then version hash); both are followed and the
+        // highest version folder wins, the way the EA app's single wildcard does.
+        let versions = tempFolder("drive-roblox")
+        touch(versions.appendingPathComponent("users/steamuser/AppData/Local/Roblox/Versions/version-abc/RobloxStudioBeta.exe"))
+        touch(versions.appendingPathComponent("users/steamuser/AppData/Local/Roblox/Versions/version-def/RobloxStudioBeta.exe"))
+        check(BCDLauncherFiles.installedProgram(studio, in: versions)
+              == "users/steamuser/AppData/Local/Roblox/Versions/version-def/RobloxStudioBeta.exe",
+              "Roblox Studio's two wildcards resolve to the newest version folder")
+        check(BCDLauncherFiles.resolve("users/*/AppData/Local/Roblox/Versions/version-def/RobloxStudioBeta.exe", in: versions) != nil,
+              "a versioned program is found, as spelled on disk")
 
         // ---- the session start
         let installerStart = BCDLauncherStart.installer(bn)

@@ -56,6 +56,11 @@ Valve's own Steam client (BCD Dock).
 BCD is a fork of [Madeira](https://github.com/willfaust/Madeira) by Will Faust and its
 contributors (see [Credits](#credits)).
 
+This checkout is **BCD-RobloxDev**: a customization of BCD that adds Roblox Studio, VS Code
+and a Dev Mode session to the Library, aimed at iPad Air 5 (256 GB) and iPhone 14 Plus. See
+[README-RobloxDev.md](README-RobloxDev.md) for what it adds, how to build it and what still
+does not work.
+
 ### Free Apple ID
 
 A free Apple ID keeps only three sideloaded apps active at once. BCD, StikDebug (where you need it for

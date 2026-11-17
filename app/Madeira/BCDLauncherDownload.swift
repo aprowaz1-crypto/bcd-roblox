@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright 2026 thebcd69 (BCD)
 // BCD Material: additional terms under GPL-3.0 section 7 apply; see LICENSE-BCD.md.
+// Modified for BCD-RobloxDev on 2026-11-16: a launcher built in BCD has no installer URL.
 
 import Foundation
 
@@ -19,6 +20,8 @@ enum BCDLauncherError: LocalizedError, Equatable {
     case tooLarge
     case notAnInstaller(company: String)
     case notEnoughSpace(title: String, gigabytes: Int)
+    /// A launcher BCD builds from programs already installed: there is nothing to download (Dev Mode).
+    case nothingToDownload(title: String)
     case saving(String)
     /// A downloaded component whose size or SHA-256 is not the pinned one (BCDGecko.swift).
     case checksum(what: String)
@@ -33,6 +36,7 @@ enum BCDLauncherError: LocalizedError, Equatable {
         case .tooLarge: return "too-large"
         case .notAnInstaller: return "not-an-installer"
         case .notEnoughSpace: return "no-space"
+        case .nothingToDownload: return "nothing-to-download"
         case .saving: return "saving"
         case .checksum: return "checksum"
         case .cancelled: return "cancelled"
@@ -53,6 +57,8 @@ enum BCDLauncherError: LocalizedError, Equatable {
             return "What came back is not a Windows installer from \(company), so it was not kept. Try again in a little while."
         case .notEnoughSpace(let title, let gigabytes):
             return "Not enough free space: \(title) needs about \(gigabytes) GB free on this device."
+        case .nothingToDownload(let title):
+            return "\(title) has no installer to download: it starts the programs you already have installed."
         case .saving(let detail):
             return "The file could not be saved: \(detail)"
         case .checksum(let what):
@@ -244,7 +250,9 @@ enum BCDLauncherInstaller {
         let final = folder.appendingPathComponent(spec.installerFile)
         let part = folder.appendingPathComponent(spec.installerFile + ".part")
         try? fm.removeItem(at: part)
-        let address = url ?? spec.installerURL
+        guard let address = url ?? spec.installerURL else {
+            throw BCDLauncherError.nothingToDownload(title: spec.title)
+        }
         guard BCDLauncherNet.isAllowed(address, hosts: spec.hosts) else {
             throw BCDLauncherError.redirected(BCDLauncherNet.origin(address))
         }
