@@ -1309,6 +1309,19 @@ jobs:
       # (Apple's agreement, app/Madeira/d3d12/NOTICE.txt); build/madeira-d3d12/deps.sh
       # checks both against their pinned hashes. A missing or mismatched converter
       # would build the stub that draws nothing in any D3D12 game, so fail instead.
+      # BCD-RobloxDev: the iOS converter dylib is not in the git tree and Apple's
+      # installer is not available to a fork. BCD's own public 0.1.665 IPA ships
+      # the same converter as this fork's vendored headers, so take that dylib
+      # from the release asset; deps.sh verifies its SHA-256 before it is used.
+      - name: Fetch the Metal Shader Converter iOS library from BCD's public IPA
+        shell: bash
+        run: |
+          set -e
+          curl -fsSL --retry 3 -o /tmp/bcd-665.ipa https://github.com/thebcd69/bcd-games/releases/download/v0.1.665/BCD.ipa
+          unzip -p /tmp/bcd-665.ipa 'Payload/Madeira.app/d3d12/libmetalirconverter.dylib' > app/Madeira/d3d12/libmetalirconverter.dylib
+          test -s app/Madeira/d3d12/libmetalirconverter.dylib
+          shasum -a 256 app/Madeira/d3d12/libmetalirconverter.dylib
+
       - name: Locate Metal Shader Converter headers
         shell: bash
         run: |
