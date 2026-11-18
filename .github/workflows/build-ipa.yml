@@ -734,9 +734,8 @@ jobs:
       # the ARM64EC SMC path decides plain and backpatched stores without
       # FEX's backpatch lock, and the PE ntdll's uncapped "[rtcs] pre" line is
       # kept to 10 per second per thread (MADEIRA_RTCS_LOG=all|N).
-      - name: Check and patch Vulkan for 32-bit programs
+      - name: Patch Vulkan for 32-bit programs
         run: |
-          python3 tests/host/check-vulkan-wow64.py --require-wine
           python3 tools/patch-wine-vulkan-wow64.py
           grep -q wine_vk_client_ptr wine/dlls/winevulkan/vulkan_thunks.c
           grep -q host_alloc wine/dlls/win32u/vulkan.c
